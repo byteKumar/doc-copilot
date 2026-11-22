@@ -53,6 +53,24 @@ def cmd_ingest(args, s: Settings) -> int:
     return 0
 
 
+def cmd_search(args, s: Settings) -> int:
+    from .embed import make_embedder
+    from .retrieve import Filters, retrieve
+
+    with connection(s.database_url) as conn:
+        r = retrieve(
+            conn, make_embedder(s), args.question, Filters(args.company, args.year),
+            chunking=args.chunking or s.chunking, top_k=args.k,
+            candidates=s.candidates_per_retriever, rrf_k=s.rrf_k,
+        )
+    print(f"best_similarity={r.best_similarity:.3f} lexical_matches={r.lexical_matches} "
+          f"latency_ms={r.latency_ms:.1f}")
+    for h in r.hits:
+        print(f"{h.rrf_score:.4f} vec#{h.vector_rank} lex#{h.lexical_rank} {h.id} "
+              f"[{h.section_title[:40]}] {h.text[:100]!r}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="doc-copilot")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -68,6 +86,14 @@ def build_parser() -> argparse.ArgumentParser:
     i.add_argument("--dir", default="data/filings")
     i.add_argument("--chunking", default="all", choices=["all", "baseline"])
     i.set_defaults(fn=cmd_ingest)
+
+    q = sub.add_parser("search", help="hybrid retrieval only (no LLM)")
+    q.add_argument("question")
+    q.add_argument("--company")
+    q.add_argument("--year", type=int)
+    q.add_argument("--chunking")
+    q.add_argument("-k", type=int, default=8)
+    q.set_defaults(fn=cmd_search)
     return p
 
 
