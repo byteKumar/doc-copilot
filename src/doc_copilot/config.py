@@ -42,7 +42,8 @@ class Settings:
     price_input_per_mtok: float = 0.10
     price_output_per_mtok: float = 0.50
 
-    # Chunking strategy used at query time (see ingest/chunk.py).
+    # Chunking used at query time: "baseline" (fixed word windows) or "table_aware"
+    # (tables kept whole with headers repeated). Ingest stores both; see ingest/chunk.py.
     chunking: str = "baseline"
     chunk_words: int = 220
     chunk_overlap_words: int = 40

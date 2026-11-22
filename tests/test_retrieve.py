@@ -36,6 +36,14 @@ def test_company_and_year_filters(ingested, embedder):
 
 
 @pytest.mark.db
+def test_chunking_strategies_are_separate(ingested, embedder):
+    base = retrieve(ingested, embedder, "net income", chunking="baseline")
+    tab = retrieve(ingested, embedder, "net income", chunking="table_aware")
+    assert all("-b" in h.id for h in base.hits)
+    assert all("-t" in h.id for h in tab.hits)
+
+
+@pytest.mark.db
 def test_get_chunk_and_filters(ingested):
     f = list_filters(ingested)
     assert [c["ticker"] for c in f["companies"]] == ["ACME", "GLBX"]

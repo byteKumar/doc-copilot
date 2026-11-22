@@ -19,9 +19,9 @@ import hashlib
 import re
 from dataclasses import dataclass
 
-from .parse import Section
+from .parse import Block, Section
 
-STRATEGIES = ("baseline",)
+STRATEGIES = ("baseline", "table_aware")
 _TOKEN = re.compile(r"\S+\s*")
 
 
@@ -55,6 +55,36 @@ def _windows(text: str, size: int, overlap: int) -> list[str]:
     return out
 
 
+def _caption_for(blocks: list[Block], i: int) -> str | None:
+    """The short paragraph right before a table usually says what the table is."""
+    if i == 0:
+        return None
+    prev = blocks[i - 1]
+    if prev.kind != "text" or len(prev.text.split()) > 60:
+        return None
+    return prev.text
+
+
+def _table_chunks(block: Block, caption: str | None, size: int) -> list[str]:
+    rows = block.rows or block.text.split("\n")
+    header = rows[: block.header_rows]
+    body = rows[block.header_rows :]
+    prefix = ([caption] if caption else []) + header
+    prefix_words = sum(len(r.split()) for r in prefix)
+    budget = max(size - prefix_words, 20)
+    pieces, current, words = [], [], 0
+    for r in body:
+        n = len(r.split())
+        if current and words + n > budget:
+            pieces.append(current)
+            current, words = [], 0
+        current.append(r)
+        words += n
+    if current:
+        pieces.append(current)
+    return ["\n".join(prefix + p) for p in pieces] or ["\n".join(prefix)]
+
+
 def chunk_section(
     section: Section, strategy: str, size: int, overlap: int
 ) -> list[tuple[str, str, str | None]]:
@@ -66,6 +96,24 @@ def chunk_section(
             ("mixed" if has_table and "|" in w else "text", w, section.anchor)
             for w in _windows(stream, size, overlap)
         ]
+    if strategy == "table_aware":
+        out: list[tuple[str, str, str | None]] = []
+        prose: list[str] = []
+
+        def flush() -> None:
+            if prose:
+                out.extend(("text", w, section.anchor) for w in _windows("\n".join(prose), size, overlap))
+                prose.clear()
+
+        for i, b in enumerate(section.blocks):
+            if b.kind == "table":
+                flush()
+                caption = _caption_for(section.blocks, i)
+                out.extend(("table", t, b.anchor or section.anchor) for t in _table_chunks(b, caption, size))
+            else:
+                prose.append(b.text)
+        flush()
+        return out
     raise ValueError(f"Unknown chunking strategy {strategy!r}; use one of {STRATEGIES}")
 
 

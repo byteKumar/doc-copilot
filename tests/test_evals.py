@@ -195,3 +195,21 @@ def test_smoke_run_on_format_examples_has_no_metrics(ingested, db_url, monkeypat
     assert rc == 0 and "no metrics reported" in out
     assert "answer accuracy" not in out
     assert not any(tmp_path.iterdir())
+
+
+@pytest.mark.db
+def test_compare_baseline_and_improved(ingested, db_url, tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("DATABASE_URL", db_url)
+    monkeypatch.setenv("MIN_SIMILARITY", "0.1")
+    rc = main(["eval", "run", "--questions", str(HARNESS_Q), "--compare", "baseline,improved",
+               "--out", str(tmp_path)])
+    out = capsys.readouterr().out
+    assert rc == 0
+    header = out.splitlines()[[i for i, line in enumerate(out.splitlines()) if line.startswith("metric")][0]]
+    assert "baseline" in header and "improved" in header
+    assert "changed between baseline and improved" in out
+    run = next(tmp_path.iterdir())
+    s = json.loads((run / "improved" / "summary.json").read_text())
+    assert s["chunking"] == "table_aware"
+    ids = [json.loads(line)["citations"] for line in (run / "improved" / "results.jsonl").read_text().splitlines()]
+    assert all("-t" in c for cites in ids for c in cites)

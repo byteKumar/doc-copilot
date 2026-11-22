@@ -94,7 +94,7 @@ def cmd_ask(args, s: Settings) -> int:
     return 0
 
 
-CHUNKING_ALIASES: dict[str, str] = {}  # label -> chunking strategy
+CHUNKING_ALIASES = {"improved": "table_aware"}  # label -> chunking strategy
 
 
 def cmd_eval_validate(args, s: Settings) -> int:
@@ -225,7 +225,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     i = sub.add_parser("ingest", help="parse, chunk, embed and store filings")
     i.add_argument("--dir", default="data/filings")
-    i.add_argument("--chunking", default="all", choices=["all", "baseline"])
+    i.add_argument("--chunking", default="all", choices=["all", "baseline", "table_aware"])
     i.set_defaults(fn=cmd_ingest)
 
     q = sub.add_parser("search", help="hybrid retrieval only (no LLM)")

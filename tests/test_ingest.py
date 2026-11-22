@@ -86,8 +86,23 @@ def test_baseline_windows_overlap():
     assert chunks[1].text.split()[:20] == first_tail
 
 
+def test_table_aware_keeps_headers_on_every_table_chunk():
+    chunks = chunk_filing(sections(), "ACME", 2024, "table_aware", 40, 10)
+    table_chunks = [c for c in chunks if c.kind == "table" and c.section == "8"]
+    assert len(table_chunks) >= 2  # split because the budget is small
+    for c in table_chunks:
+        assert "2024 | 2023 | 2022" in c.text
+    assert any("Net income | $ 182.4" in c.text for c in table_chunks)
+
+
+def test_table_aware_caption_attached():
+    chunks = chunk_filing(sections(), "ACME", 2024, "table_aware", 220, 40)
+    seg = next(c for c in chunks if c.kind == "table" and "Warehouse Automation" in c.text)
+    assert seg.text.startswith("The following table presents revenue by reportable segment")
+
+
 def test_baseline_can_split_table_from_its_header():
-    # Small windows show a known weakness: table rows lose their header row.
+    # Small windows show the failure mode table_aware fixes.
     chunks = chunk_filing(sections(), "ACME", 2024, "baseline", 40, 5)
     net = [c for c in chunks if "Net income | $ 182.4" in c.text]
     assert net and all("2024 | 2023 | 2022" not in c.text for c in net)
@@ -141,7 +156,7 @@ def test_ingest_and_reingest_is_idempotent(conn):
     emb = FakeEmbedder(384)
     first = ingest_file(conn, ACME, emb)
     assert first.chunks_embedded == first.chunks_total > 0
-    assert set(first.per_strategy) == {"baseline"}
+    assert set(first.per_strategy) == {"baseline", "table_aware"}
     n = conn.execute("SELECT count(*) FROM chunks").fetchone()[0]
     assert n == first.chunks_total
 
