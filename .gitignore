@@ -14,3 +14,4 @@ web/.next/
 web/out/
 *.log
 .DS_Store
+.claude/

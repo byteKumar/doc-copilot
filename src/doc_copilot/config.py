@@ -68,9 +68,12 @@ class Settings:
     @classmethod
     def from_env(cls) -> Settings:
         d = cls()
+        embedder = _env("EMBEDDER", d.embedder)
+        # The fake hashing embedder's similarities mean nothing, so the floor is off by default.
+        default_floor = 0.0 if embedder == "fake" else d.min_similarity
         return cls(
             database_url=_env("DATABASE_URL", d.database_url),
-            embedder=_env("EMBEDDER", d.embedder),
+            embedder=embedder,
             embedding_model=_env("EMBEDDING_MODEL", d.embedding_model),
             embedding_dim=_env_int("EMBEDDING_DIM", d.embedding_dim),
             llm_provider=_env("LLM_PROVIDER", d.llm_provider),
@@ -84,7 +87,7 @@ class Settings:
             top_k=_env_int("TOP_K", d.top_k),
             candidates_per_retriever=_env_int("CANDIDATES_PER_RETRIEVER", d.candidates_per_retriever),
             rrf_k=_env_int("RRF_K", d.rrf_k),
-            min_similarity=_env_float("MIN_SIMILARITY", d.min_similarity),
+            min_similarity=_env_float("MIN_SIMILARITY", default_floor),
             access_code=_env("ACCESS_CODE", d.access_code),
             rate_limit_per_minute=_env_int("RATE_LIMIT_PER_MINUTE", d.rate_limit_per_minute),
             daily_query_cap=_env_int("DAILY_QUERY_CAP", d.daily_query_cap),
