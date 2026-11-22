@@ -1,0 +1,6 @@
+# Copy to corpus.toml and edit. Every ticker is downloaded for every year.
+# Pick 10-20 well-known companies from different industries; mix of table-heavy
+# (banks, retailers) and prose-heavy (software) filings makes the eval more honest.
+# "years" are fiscal years (the 10-K's period of report), not filing years.
+tickers = ["AAPL", "MSFT", "AMZN", "JPM", "JNJ", "XOM", "WMT", "KO", "NKE", "TSLA", "NVDA", "PG"]
+years = [2023, 2024]
