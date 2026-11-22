@@ -16,13 +16,13 @@ JUDGE CHECK: Chaman spot-checked ___ answers, agreement with LLM judge ___%
                                                                        not measured yet (needs eval set / API key)
 LATENCY p50/p95: ___ / ___ ms ; COST: $___ per 1,000 queries ; total API spend $___
                                                                        not measured yet (needs eval set / API key)
-DEPLOYED URL: ___ ; CI passing? ___ ; demo video: ___                  not deployed / CI not run on GitHub yet / not recorded
+DEPLOYED URL: ___ ; CI passing? ___ ; demo video: ___                  not deployed / CI passes on GitHub (tests and web build; eval subset skips until a key and eval set exist) / not recorded
 IMPROVEMENT MADE AND WHY: table-aware chunking (tables kept whole, caption + header rows repeated
   in every table chunk), switchable with CHUNKING=table_aware. Built because baseline windows can
   split a financial table so the rows lose their year headers. Whether it helps is
   not measured yet (needs eval set / API key).
 ANYTHING THAT FAILED OR SURPRISED YOU: ___
-REPO pushed? ___                                                       not pushed yet
+REPO pushed? ___                                                       yes, https://github.com/byteKumar/doc-copilot
 ```
 
 How to fill the eval lines:
