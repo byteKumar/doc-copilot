@@ -71,6 +71,29 @@ def cmd_search(args, s: Settings) -> int:
     return 0
 
 
+def cmd_ask(args, s: Settings) -> int:
+    from .answer import Answerer
+    from .embed import make_embedder
+    from .llm import make_llm
+    from .retrieve import Filters
+
+    if s.llm_provider == "fake":
+        print("note: LLM_PROVIDER=fake (offline extractive stand-in, not Claude)", file=sys.stderr)
+    answerer = Answerer(s, make_embedder(s), make_llm(s), chunking=args.chunking)
+    with connection(s.database_url) as conn:
+        r = answerer.answer(conn, args.question, Filters(args.company, args.year))
+    if args.json:
+        print(json.dumps(r.to_dict(), indent=2, default=str))
+        return 0
+    print(r.answer)
+    for c in r.citations:
+        print(f"  [{c.id}] {c.company} {c.year} Item {c.section}. {c.section_title}")
+    if r.refused:
+        print(f"  (refused: {r.refusal_reason})")
+    print(f"  latency {r.latency_ms:.0f} ms, tokens {r.input_tokens}/{r.output_tokens}, ${r.cost_usd:.6f}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="doc-copilot")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -94,6 +117,14 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("--chunking")
     q.add_argument("-k", type=int, default=8)
     q.set_defaults(fn=cmd_search)
+
+    a = sub.add_parser("ask", help="answer a question with citations")
+    a.add_argument("question")
+    a.add_argument("--company")
+    a.add_argument("--year", type=int)
+    a.add_argument("--chunking")
+    a.add_argument("--json", action="store_true")
+    a.set_defaults(fn=cmd_ask)
     return p
 
 
