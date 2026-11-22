@@ -94,6 +94,124 @@ def cmd_ask(args, s: Settings) -> int:
     return 0
 
 
+CHUNKING_ALIASES: dict[str, str] = {}  # label -> chunking strategy
+
+
+def cmd_eval_validate(args, s: Settings) -> int:
+    from .evals.dataset import load_questions
+
+    rep = load_questions(Path(args.questions))
+    for e in rep.errors:
+        print(f"ERROR   {e}")
+    for w in rep.warnings:
+        print(f"WARNING {w}")
+    real = [q for q in rep.questions if not q.format_example]
+    a = sum(q.answerable for q in real)
+    print(f"{len(rep.questions)} questions parsed: {a} answerable, {len(real) - a} unanswerable, "
+          f"{sum(q.split == 'dev' for q in real)} dev / {sum(q.split == 'test' for q in real)} test")
+    return 0 if rep.ok else 2
+
+
+def cmd_eval_run(args, s: Settings) -> int:
+    from .answer import Answerer
+    from .embed import make_embedder
+    from .evals.dataset import is_format_examples, load_questions, select_subset
+    from .evals.harness import (
+        estimate_cost,
+        flips,
+        render_table,
+        run_id,
+        run_questions,
+        summarize,
+        write_run,
+    )
+    from .llm import make_llm
+
+    path = Path(args.questions)
+    rep = load_questions(path)
+    if not rep.ok:
+        for e in rep.errors:
+            print(f"ERROR {e}", file=sys.stderr)
+        return 2
+    for w in rep.warnings:
+        print(f"WARNING {w}", file=sys.stderr)
+    smoke = is_format_examples(path, rep.questions)
+    if smoke and not args.smoke:
+        print("Refusing: this file holds FORMAT EXAMPLES, not the eval set. Headline numbers come only "
+              "from evals/questions.jsonl that you wrote. Use --smoke to check the plumbing.", file=sys.stderr)
+        return 2
+
+    qs = [q for q in rep.questions if args.split == "all" or q.split == args.split]
+    if args.subset:
+        qs = select_subset(qs, args.subset)
+    labels = args.compare.split(",") if args.compare else [args.chunking or s.chunking]
+    chunkings = [CHUNKING_ALIASES.get(x, x) for x in labels]
+    embedder = make_embedder(s)
+
+    with connection(s.database_url) as conn:
+        est = estimate_cost(conn, qs, s, embedder, chunkings, with_judge=args.judge)
+        print(f"Plan: {len(qs)} questions x {len(chunkings)} config(s), model {s.llm_model} "
+              f"(provider {s.llm_provider})")
+        print(f"Estimate: {est.llm_calls} LLM calls, ~{est.input_tokens:,} input + ~{est.output_tokens:,} "
+              f"output tokens = ~${est.usd:.4f} at ${s.price_input_per_mtok}/${s.price_output_per_mtok} "
+              f"per 1M tokens ({est.refused_before_llm} refused before the LLM by the similarity floor)")
+        if args.dry_run:
+            return 0
+        if s.llm_provider != "fake" and not args.yes:
+            print("This run calls a paid API. Re-run with --yes to proceed.", file=sys.stderr)
+            return 3
+        if s.llm_provider == "fake":
+            print("NOTE: LLM_PROVIDER=fake. These numbers test the plumbing; they are not results.")
+
+        llm = make_llm(s)
+        out_root = Path(args.out) / run_id()
+        summaries, all_results = [], []
+        for label, chunking in zip(labels, chunkings, strict=True):
+            answerer = Answerer(s, embedder, llm, chunking=chunking)
+            results, judge_cost = run_questions(
+                conn, qs, answerer, s, judge_llm=llm if args.judge else None, progress=args.verbose,
+            )
+            all_results.append(results)
+            if smoke:
+                for r in results:
+                    state = "REFUSED" if r.refused else "answered"
+                    print(f"  {r.id} [{state}] {r.model_answer[:90]!r} cites={r.citations}")
+                continue
+            summ = summarize(results, label, chunking, llm.model, judge_cost, args.judge, rep.warnings)
+            summaries.append(summ)
+            write_run(out_root / label, summ, results, spotcheck=args.judge)
+
+    if smoke:
+        print("SMOKE RUN on format examples: no metrics reported.")
+        return 0
+    print(render_table(summaries))
+    if len(all_results) == 2:
+        changed = flips(all_results[0], all_results[1])
+        print(f"\n{len(changed)} answerable questions changed between {labels[0]} and {labels[1]}:")
+        for c in changed:
+            print("  " + c)
+    print(f"\nResults written to {out_root}/")
+    if args.judge:
+        print("Fill the human_correct column in judge_spotcheck.csv, then run: "
+              "doc-copilot eval agreement <csv>")
+    return 0
+
+
+def cmd_eval_agreement(args, s: Settings) -> int:
+    from .evals.scoring import agreement_from_csv
+
+    a = agreement_from_csv(Path(args.csv))
+    if a.n == 0:
+        print(f"No rows with both human_correct and judge_correct filled ({a.skipped} skipped).")
+        return 2
+    kappa = "n/a" if a.kappa is None else f"{a.kappa:.2f}"
+    print(f"Spot-checked {a.n} answers; agreement with the LLM judge {a.agree}/{a.n} = {a.rate:.1%}; "
+          f"Cohen's kappa {kappa}; {a.skipped} rows skipped")
+    if a.n < 30:
+        print("WARNING: the spec asks for at least 30 spot-checked answers.")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="doc-copilot")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -125,6 +243,29 @@ def build_parser() -> argparse.ArgumentParser:
     a.add_argument("--chunking")
     a.add_argument("--json", action="store_true")
     a.set_defaults(fn=cmd_ask)
+
+    ev = sub.add_parser("eval", help="eval set tools").add_subparsers(dest="eval_cmd", required=True)
+    v = ev.add_parser("validate", help="check an eval JSONL file")
+    v.add_argument("--questions", default="evals/questions.jsonl")
+    v.set_defaults(fn=cmd_eval_validate)
+
+    r = ev.add_parser("run", help="run and score the eval set")
+    r.add_argument("--questions", default="evals/questions.jsonl")
+    r.add_argument("--split", default="all", choices=["all", "dev", "test"])
+    r.add_argument("--subset", type=int, help="deterministic stratified subset (CI uses 20)")
+    r.add_argument("--chunking", help="baseline | table_aware | improved")
+    r.add_argument("--compare", help="e.g. baseline,improved")
+    r.add_argument("--judge", action="store_true", help="also grade with the LLM judge")
+    r.add_argument("--dry-run", action="store_true", help="print the cost estimate and stop")
+    r.add_argument("--yes", action="store_true", help="confirm a paid run")
+    r.add_argument("--smoke", action="store_true", help="allow FORMAT_EXAMPLES (no metrics)")
+    r.add_argument("--out", default="evals/runs")
+    r.add_argument("-v", "--verbose", action="store_true")
+    r.set_defaults(fn=cmd_eval_run)
+
+    g = ev.add_parser("agreement", help="human vs judge agreement from a filled spot-check CSV")
+    g.add_argument("csv")
+    g.set_defaults(fn=cmd_eval_agreement)
     return p
 
 
