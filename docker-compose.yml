@@ -1,3 +1,5 @@
+# `docker compose up -d db` starts only Postgres (what tests and local dev need).
+# `docker compose --profile app up --build` also builds and runs the API and web UI.
 services:
   db:
     image: pgvector/pgvector:pg16
@@ -14,6 +16,38 @@ services:
       interval: 2s
       timeout: 3s
       retries: 30
+
+  api:
+    profiles: ["app"]
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/doc_copilot
+      EMBEDDER: local
+      # Offline stand-in unless you explicitly pass LLM_PROVIDER=anthropic and a key.
+      LLM_PROVIDER: ${LLM_PROVIDER:-fake}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-claude-haiku-5-5}
+      ACCESS_CODE: ${ACCESS_CODE:-}
+      CORS_ORIGINS: http://localhost:3001
+      MIN_SIMILARITY: ${MIN_SIMILARITY:-0.25}
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./data:/app/data:ro
+
+  web:
+    profiles: ["app"]
+    build:
+      context: ./web
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8001
+    depends_on:
+      - api
+    ports:
+      - "3001:3001"
 
 volumes:
   pgdata:

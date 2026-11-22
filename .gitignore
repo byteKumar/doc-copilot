@@ -8,7 +8,6 @@ __pycache__/
 !.env.example
 data/
 evals/runs/
-corpus.toml
 node_modules/
 web/.next/
 web/out/

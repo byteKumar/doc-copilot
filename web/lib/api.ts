@@ -39,6 +39,41 @@ export type FilterOptions = {
   years: number[];
 };
 
+const CODE_KEY = "doc-copilot-access-code";
+
+export function getAccessCode(): string {
+  try {
+    return localStorage.getItem(CODE_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+export function setAccessCode(code: string) {
+  try {
+    localStorage.setItem(CODE_KEY, code);
+  } catch {}
+}
+
+export type Usage = {
+  queries_total: number;
+  queries_24h: number;
+  refusal_rate: number | null;
+  llm_calls_total: number;
+  llm_calls_24h: number;
+  daily_cap: number;
+  latency_p50_ms: number | null;
+  latency_p95_ms: number | null;
+  cost_total_usd: number;
+  cost_per_1000_queries_usd: number | null;
+  input_tokens_total: number;
+  output_tokens_total: number;
+  feedback_up: number;
+  feedback_down: number;
+  by_day: { day: string; queries: number; cost_usd: number; latency_p50_ms: number | null }[];
+  recent: { at: string; question: string; refused: boolean; latency_ms: number; cost_usd: number }[];
+};
+
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
     super(message);
@@ -48,7 +83,11 @@ export class ApiError extends Error {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     ...init,
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+    headers: {
+      "Content-Type": "application/json",
+      "X-Access-Code": getAccessCode(),
+      ...(init?.headers ?? {}),
+    },
   });
   if (!res.ok) {
     let detail = res.statusText;
@@ -62,6 +101,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  check: () => request<{ ok: boolean }>("/auth/check"),
+  usage: () => request<Usage>("/usage"),
   filters: () => request<FilterOptions>("/filters"),
   ask: (question: string, company?: string, year?: number) =>
     request<AnswerResponse>("/ask", {

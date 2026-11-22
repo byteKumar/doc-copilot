@@ -14,6 +14,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <header className="topbar">
           <Link href="/" className="brand">doc-copilot</Link>
           <span className="tagline">10-K answers with citations</span>
+          <nav>
+            <Link href="/">Chat</Link>
+            <Link href="/usage">Usage</Link>
+          </nav>
         </header>
         <main>{children}</main>
       </body>

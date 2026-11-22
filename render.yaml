@@ -1,0 +1,46 @@
+# Render Blueprint (https://render.com/docs/blueprint-spec). Review plan names and prices in
+# the Render dashboard before applying; they change. Secrets marked sync:false are entered
+# by you in the dashboard and never stored in this file.
+databases:
+  - name: doc-copilot-db
+    databaseName: doc_copilot
+    postgresMajorVersion: "16"
+    plan: basic-256mb
+
+services:
+  - type: web
+    name: doc-copilot-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    # torch + MiniLM need roughly 1 GB of RAM; the 512 MB tier will run out of memory.
+    plan: standard
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: doc-copilot-db
+          property: connectionString
+      - key: LLM_PROVIDER
+        value: anthropic
+      - key: LLM_MODEL
+        value: claude-haiku-5-5
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ACCESS_CODE
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: RATE_LIMIT_PER_MINUTE
+        value: "10"
+      - key: DAILY_QUERY_CAP
+        value: "300"
+
+  - type: web
+    name: doc-copilot-web
+    runtime: docker
+    rootDir: web
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    envVars:
+      - key: NEXT_PUBLIC_API_URL
+        sync: false
